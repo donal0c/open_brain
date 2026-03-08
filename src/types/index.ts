@@ -46,6 +46,17 @@ export interface InsertThoughtParams {
   metadata: Record<string, unknown>;
 }
 
+export interface UpdateThoughtParams {
+  id: string;
+  raw_text?: string;
+  embedding?: number[];
+  context?: ThoughtContext;
+  people?: string[];
+  topics?: string[];
+  thought_type?: ThoughtType | null;
+  action_items?: string[];
+}
+
 export interface MetadataSearchParams {
   people?: string[];
   topics?: string[];

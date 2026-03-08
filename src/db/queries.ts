@@ -6,12 +6,74 @@ import type {
   ThoughtContext,
   ThoughtStats,
   ThoughtWithScore,
+  UpdateThoughtParams,
 } from '../types/index.js';
 
 /** Format a string[] as a PostgreSQL array literal: {"a","b","c"} */
 function pgArray(arr: string[]): string {
   const escaped = arr.map((s) => '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"');
   return '{' + escaped.join(',') + '}';
+}
+
+export async function getThoughtById(id: string): Promise<Thought | null> {
+  const rows = await sql<Thought[]>`
+    SELECT id, raw_text, context, people, topics, thought_type,
+           action_items, metadata, created_at, updated_at
+    FROM thoughts
+    WHERE id = ${id}
+  `;
+  return rows[0] ?? null;
+}
+
+export async function deleteThought(id: string): Promise<{ id: string; raw_text: string } | null> {
+  const rows = await sql<{ id: string; raw_text: string }[]>`
+    DELETE FROM thoughts WHERE id = ${id}
+    RETURNING id, raw_text
+  `;
+  return rows[0] ?? null;
+}
+
+export async function updateThought(params: UpdateThoughtParams): Promise<Thought | null> {
+  const setClauses: ReturnType<typeof sql>[] = [];
+
+  if (params.raw_text !== undefined) {
+    setClauses.push(sql`raw_text = ${params.raw_text}`);
+  }
+  if (params.embedding !== undefined) {
+    setClauses.push(sql`embedding = ${JSON.stringify(params.embedding)}::vector`);
+  }
+  if (params.context !== undefined) {
+    setClauses.push(sql`context = ${params.context}`);
+  }
+  if (params.people !== undefined) {
+    setClauses.push(sql`people = ${pgArray(params.people)}::text[]`);
+  }
+  if (params.topics !== undefined) {
+    setClauses.push(sql`topics = ${pgArray(params.topics)}::text[]`);
+  }
+  if (params.thought_type !== undefined) {
+    setClauses.push(sql`thought_type = ${params.thought_type}`);
+  }
+  if (params.action_items !== undefined) {
+    setClauses.push(sql`action_items = ${JSON.stringify(params.action_items)}::jsonb`);
+  }
+
+  if (setClauses.length === 0) {
+    return getThoughtById(params.id);
+  }
+
+  const setClause = setClauses.reduce(
+    (acc, clause, i) => (i === 0 ? clause : sql`${acc}, ${clause}`)
+  );
+
+  const rows = await sql<Thought[]>`
+    UPDATE thoughts
+    SET ${setClause}
+    WHERE id = ${params.id}
+    RETURNING id, raw_text, context, people, topics, thought_type,
+              action_items, metadata, created_at, updated_at
+  `;
+  return rows[0] ?? null;
 }
 
 export async function insertThought(params: InsertThoughtParams): Promise<Thought> {

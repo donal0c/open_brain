@@ -8,6 +8,10 @@ import { captureThought } from './tools/capture.js';
 import { searchThoughts } from './tools/search.js';
 import { listRecentThoughts } from './tools/recent.js';
 import { metadataSearchThoughts } from './tools/metadata-search.js';
+import { getThought } from './tools/get.js';
+import { updateThoughtTool } from './tools/update.js';
+import { deleteThoughtTool } from './tools/delete.js';
+import { appendThoughtTool } from './tools/append.js';
 import { getThoughtStats } from './tools/stats.js';
 
 function createServer(): McpServer {
@@ -35,6 +39,109 @@ function createServer(): McpServer {
     },
   }, async (args) => {
     return captureThought(args);
+  });
+
+  server.registerTool('get_thought', {
+    title: 'Get Thought',
+    description:
+      'Retrieve a single thought by its ID with full untruncated text. Use semantic_search or list_recent first to find the thought ID.',
+    inputSchema: {
+      id: z.string().uuid().describe('The UUID of the thought to retrieve'),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    return getThought(args);
+  });
+
+  server.registerTool('update_thought', {
+    title: 'Update Thought',
+    description:
+      'Update an existing thought by ID. Use semantic_search or list_recent first to find the thought ID. If text is changed, embedding and metadata are automatically re-generated. Provide only the fields you want to change.',
+    inputSchema: {
+      id: z.string().uuid().describe('The UUID of the thought to update'),
+      text: z
+        .string()
+        .min(1)
+        .max(10000)
+        .optional()
+        .describe('New text content. If changed, embedding and metadata are automatically re-generated.'),
+      context: z
+        .enum(['work', 'personal'])
+        .optional()
+        .describe('Override context classification'),
+      people: z
+        .array(z.string())
+        .optional()
+        .describe('Override extracted people'),
+      topics: z
+        .array(z.string())
+        .optional()
+        .describe('Override extracted topics'),
+      thought_type: z
+        .enum([
+          'decision', 'insight', 'meeting_note', 'idea',
+          'task', 'observation', 'reference', 'personal_note',
+        ])
+        .optional()
+        .describe('Override thought type classification'),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+  }, async (args) => {
+    return updateThoughtTool(args);
+  });
+
+  server.registerTool('delete_thought', {
+    title: 'Delete Thought',
+    description:
+      'Permanently delete a thought by ID. Use semantic_search or list_recent first to find the thought ID. This action cannot be undone.',
+    inputSchema: {
+      id: z.string().uuid().describe('The UUID of the thought to delete'),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    return deleteThoughtTool(args);
+  });
+
+  server.registerTool('append_thought', {
+    title: 'Append to Thought',
+    description:
+      'Add text to an existing thought without replacing it. Use semantic_search or list_recent first to find the thought ID. Embedding and metadata are re-generated after modification.',
+    inputSchema: {
+      id: z.string().uuid().describe('The UUID of the thought to append to'),
+      text: z.string().min(1).max(10000).describe('The text to append or prepend'),
+      position: z
+        .enum(['append', 'prepend'])
+        .default('append')
+        .describe('Where to add the text: append (end) or prepend (beginning). Default: append.'),
+      separator: z
+        .string()
+        .max(100)
+        .default('\n\n')
+        .describe('Separator between existing and new text. Default: double newline.'),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+  }, async (args) => {
+    return appendThoughtTool(args);
   });
 
   server.registerTool('semantic_search', {
