@@ -57,6 +57,28 @@ export interface UpdateThoughtParams {
   action_items?: string[];
 }
 
+export type LinkRelationship =
+  | 'relates_to'
+  | 'extends'
+  | 'contradicts'
+  | 'supports'
+  | 'follows_up'
+  | 'inspired_by'
+  | 'blocks';
+
+export interface ThoughtLink {
+  id: string;
+  source_id: string;
+  target_id: string;
+  relationship: LinkRelationship;
+  note: string | null;
+  created_at: Date;
+}
+
+export interface ThoughtLinkWithThought extends ThoughtLink {
+  linked_thought: Thought;
+}
+
 export interface MetadataSearchParams {
   people?: string[];
   topics?: string[];

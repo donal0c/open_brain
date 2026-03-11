@@ -13,6 +13,9 @@ import { updateThoughtTool } from './tools/update.js';
 import { deleteThoughtTool } from './tools/delete.js';
 import { appendThoughtTool } from './tools/append.js';
 import { getThoughtStats } from './tools/stats.js';
+import { linkThoughts } from './tools/link.js';
+import { getLinked } from './tools/get-linked.js';
+import { unlinkThoughts } from './tools/unlink.js';
 
 function createServer(): McpServer {
   const server = new McpServer({
@@ -241,6 +244,100 @@ function createServer(): McpServer {
     },
   }, async (args) => {
     return metadataSearchThoughts(args);
+  });
+
+  server.registerTool('link_thoughts', {
+    title: 'Link Thoughts',
+    description:
+      'Create a typed relationship between two thoughts. Use semantic_search or list_recent to find thought IDs first. Relationships are directional: source -> relationship -> target.',
+    inputSchema: {
+      source_id: z.string().uuid().describe('The UUID of the source thought'),
+      target_id: z.string().uuid().describe('The UUID of the target thought'),
+      relationship: z
+        .enum([
+          'relates_to', 'extends', 'contradicts', 'supports',
+          'follows_up', 'inspired_by', 'blocks',
+        ])
+        .describe(
+          'Type of relationship: relates_to (general), extends (builds on), contradicts (disagrees with), ' +
+          'supports (evidence for), follows_up (next step from), inspired_by (sparked by), blocks (prevents)'
+        ),
+      note: z
+        .string()
+        .max(500)
+        .optional()
+        .describe('Optional note explaining why these thoughts are linked'),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    return linkThoughts(args);
+  });
+
+  server.registerTool('get_linked', {
+    title: 'Get Linked Thoughts',
+    description:
+      'Retrieve all thoughts linked to a given thought, showing relationship types and direction. Optionally filter by relationship type.',
+    inputSchema: {
+      id: z.string().uuid().describe('The UUID of the thought to get links for'),
+      relationship: z
+        .enum([
+          'relates_to', 'extends', 'contradicts', 'supports',
+          'follows_up', 'inspired_by', 'blocks',
+        ])
+        .optional()
+        .describe('Optional: filter by relationship type'),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    return getLinked(args);
+  });
+
+  server.registerTool('unlink_thoughts', {
+    title: 'Unlink Thoughts',
+    description:
+      'Remove a link between thoughts. Either provide the link_id (from get_linked), or provide source_id + target_id to remove links between a pair. Optionally filter by relationship type.',
+    inputSchema: {
+      link_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe('The UUID of the specific link to remove. Use this if you know the link ID from get_linked.'),
+      source_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe('The UUID of one thought in the pair. Required if link_id is not provided.'),
+      target_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe('The UUID of the other thought in the pair. Required if link_id is not provided.'),
+      relationship: z
+        .enum([
+          'relates_to', 'extends', 'contradicts', 'supports',
+          'follows_up', 'inspired_by', 'blocks',
+        ])
+        .optional()
+        .describe('Optional: only remove links with this relationship type (when using source_id + target_id)'),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    return unlinkThoughts(args);
   });
 
   server.registerTool('stats', {

@@ -1,9 +1,12 @@
 import { sql } from './client.js';
 import type {
   InsertThoughtParams,
+  LinkRelationship,
   MetadataSearchParams,
   Thought,
   ThoughtContext,
+  ThoughtLink,
+  ThoughtLinkWithThought,
   ThoughtStats,
   ThoughtWithScore,
   UpdateThoughtParams,
@@ -197,6 +200,104 @@ export async function searchByMetadata(params: MetadataSearchParams): Promise<Th
     WHERE ${whereClause}
     ORDER BY created_at DESC
     LIMIT ${limit}
+  `;
+}
+
+export async function insertLink(
+  sourceId: string,
+  targetId: string,
+  relationship: LinkRelationship,
+  note?: string
+): Promise<ThoughtLink> {
+  const rows = await sql<ThoughtLink[]>`
+    INSERT INTO thought_links (source_id, target_id, relationship, note)
+    VALUES (${sourceId}, ${targetId}, ${relationship}, ${note ?? null})
+    RETURNING id, source_id, target_id, relationship, note, created_at
+  `;
+  return rows[0];
+}
+
+export async function getLinkedThoughts(
+  thoughtId: string,
+  relationship?: LinkRelationship
+): Promise<ThoughtLinkWithThought[]> {
+  if (relationship) {
+    return sql<ThoughtLinkWithThought[]>`
+      SELECT
+        tl.id, tl.source_id, tl.target_id, tl.relationship, tl.note, tl.created_at,
+        t.id AS "linked_thought.id",
+        t.raw_text AS "linked_thought.raw_text",
+        t.context AS "linked_thought.context",
+        t.people AS "linked_thought.people",
+        t.topics AS "linked_thought.topics",
+        t.thought_type AS "linked_thought.thought_type",
+        t.action_items AS "linked_thought.action_items",
+        t.metadata AS "linked_thought.metadata",
+        t.created_at AS "linked_thought.created_at",
+        t.updated_at AS "linked_thought.updated_at"
+      FROM thought_links tl
+      JOIN thoughts t ON (
+        CASE WHEN tl.source_id = ${thoughtId} THEN tl.target_id ELSE tl.source_id END = t.id
+      )
+      WHERE (tl.source_id = ${thoughtId} OR tl.target_id = ${thoughtId})
+        AND tl.relationship = ${relationship}
+      ORDER BY tl.created_at DESC
+    `;
+  }
+
+  return sql<ThoughtLinkWithThought[]>`
+    SELECT
+      tl.id, tl.source_id, tl.target_id, tl.relationship, tl.note, tl.created_at,
+      t.id AS "linked_thought.id",
+      t.raw_text AS "linked_thought.raw_text",
+      t.context AS "linked_thought.context",
+      t.people AS "linked_thought.people",
+      t.topics AS "linked_thought.topics",
+      t.thought_type AS "linked_thought.thought_type",
+      t.action_items AS "linked_thought.action_items",
+      t.metadata AS "linked_thought.metadata",
+      t.created_at AS "linked_thought.created_at",
+      t.updated_at AS "linked_thought.updated_at"
+    FROM thought_links tl
+    JOIN thoughts t ON (
+      CASE WHEN tl.source_id = ${thoughtId} THEN tl.target_id ELSE tl.source_id END = t.id
+    )
+    WHERE tl.source_id = ${thoughtId} OR tl.target_id = ${thoughtId}
+    ORDER BY tl.created_at DESC
+  `;
+}
+
+export async function deleteLinkById(linkId: string): Promise<ThoughtLink | null> {
+  const rows = await sql<ThoughtLink[]>`
+    DELETE FROM thought_links WHERE id = ${linkId}
+    RETURNING id, source_id, target_id, relationship, note, created_at
+  `;
+  return rows[0] ?? null;
+}
+
+export async function deleteLinkByPair(
+  sourceId: string,
+  targetId: string,
+  relationship?: LinkRelationship
+): Promise<ThoughtLink[]> {
+  if (relationship) {
+    return sql<ThoughtLink[]>`
+      DELETE FROM thought_links
+      WHERE (
+        (source_id = ${sourceId} AND target_id = ${targetId})
+        OR (source_id = ${targetId} AND target_id = ${sourceId})
+      ) AND relationship = ${relationship}
+      RETURNING id, source_id, target_id, relationship, note, created_at
+    `;
+  }
+
+  return sql<ThoughtLink[]>`
+    DELETE FROM thought_links
+    WHERE (
+      (source_id = ${sourceId} AND target_id = ${targetId})
+      OR (source_id = ${targetId} AND target_id = ${sourceId})
+    )
+    RETURNING id, source_id, target_id, relationship, note, created_at
   `;
 }
 
