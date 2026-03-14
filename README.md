@@ -1,34 +1,77 @@
 # Open Brain
 
-An MCP server for personal thought capture and semantic retrieval. Captures thoughts, automatically extracts metadata (people, topics, type, action items), generates embeddings, and provides semantic search — all through the MCP protocol.
+Open Brain is a thought-analysis backend for fast personal capture flows. Its best fit is low-friction ingestion from tools like OpenClaw over WhatsApp or mobile HTTP clients, then deeper semantic retrieval and structured analysis after capture.
+
+## What It Does
+
+- Captures short thoughts, notes, and voice transcripts
+- Extracts structured metadata: people, topics, thought type, action items, life domain
+- Stores hybrid-searchable memory in PostgreSQL with pgvector
+- Answers questions over your history with retrieval + synthesis
+- Supports both MCP and an authenticated HTTP API
+
+## Product Shape
+
+There are two interfaces:
+
+- `MCP`: full power-user/admin surface for rich memory management
+- `HTTP`: OpenClaw/mobile-friendly surface for capture, search, ask, and lightweight maintenance
+
+The HTTP API exists because OpenClaw primarily integrates through skills/plugins and external tools, not through direct MCP use in the main agent runtime.
 
 ## Architecture
 
-- **MCP SDK** (`@modelcontextprotocol/sdk`) with stdio transport
-- **Supabase PostgreSQL** + pgvector for storage and vector similarity search
-- **OpenAI** `text-embedding-3-small` for 1536-dim embeddings
-- **Claude Sonnet 4.6** via AWS Bedrock for metadata extraction and context classification
+- `@modelcontextprotocol/sdk` for the MCP server
+- `Hono` for the HTTP API
+- `PostgreSQL` + `pgvector` for storage and semantic retrieval
+- `OpenAI text-embedding-3-small` for embeddings
+- `Claude Sonnet 4.6` on Bedrock for metadata extraction and synthesis
 
-## Tools
+## Core Concepts
 
-| Tool | Description |
-|------|-------------|
-| `capture_thought` | Capture text with parallel embedding generation + metadata extraction. Auto-classifies as work/personal. |
-| `semantic_search` | Meaning-based search using cosine similarity over embeddings. |
-| `list_recent` | Recent thoughts ordered by time. |
-| `search_by_metadata` | Filter by people, topics, type, dates, context (AND logic). |
-| `stats` | Aggregate statistics: totals, breakdowns, top topics/people, activity. |
+### Life Domains
 
-## Context Classification
+Thoughts are classified into:
 
-Thoughts are partitioned into `work` and `personal` contexts. You can set context explicitly or let the LLM auto-classify. Anything involving technology, software, engineering, or product development defaults to `work` unless explicitly marked personal.
+- `personal`
+- `family`
+- `health`
+- `finance`
+- `social`
+- `creative`
+- `travel`
+- `unclassified`
+
+### Thought Types
+
+Thoughts are tagged as one of:
+
+- `decision`
+- `insight`
+- `meeting_note`
+- `idea`
+- `task`
+- `observation`
+- `reference`
+- `personal_note`
+
+## Most Valuable Flows
+
+For OpenClaw and mobile capture, the highest-value endpoints are:
+
+- `POST /api/capture`
+- `GET /api/search`
+- `GET /api/recent`
+- `POST /api/ask`
+
+The MCP server also exposes richer management tools such as linking, merging, exporting, timelines, and archival.
 
 ## Setup
 
 ### Prerequisites
 
 - Node.js >= 20
-- A Supabase project with pgvector enabled
+- PostgreSQL or Supabase with `pgvector`
 - OpenAI API key
 - AWS credentials with Bedrock access
 
@@ -41,45 +84,46 @@ pnpm build
 
 ### Environment Variables
 
-Copy `.env.example` to `.env` and fill in your credentials:
-
+```bash
+SUPABASE_DB_URL=...
+OPENAI_API_KEY=...
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-6
+API_TOKEN=...           # Required for standalone HTTP use
+HTTP_PORT=3001          # Optional
 ```
-SUPABASE_DB_URL    # PostgreSQL connection string (transaction pooler, port 6543)
-OPENAI_API_KEY     # For text-embedding-3-small
-AWS_REGION         # For Bedrock (e.g., us-east-1)
-AWS_ACCESS_KEY_ID
-AWS_SECRET_ACCESS_KEY
-BEDROCK_MODEL_ID   # Optional (default: us.anthropic.claude-sonnet-4-6)
-```
 
-### Database Migration
-
-Run once to create the `thoughts` table, indexes, and trigger:
+### Database Setup
 
 ```bash
 pnpm setup-db
+psql $SUPABASE_DB_URL -f scripts/migrate-001-hybrid-search.sql
+psql $SUPABASE_DB_URL -f scripts/migrate-002-life-domains.sql
+psql $SUPABASE_DB_URL -f scripts/migrate-003-confidence-archival.sql
+psql $SUPABASE_DB_URL -f scripts/migrate-004-idempotency.sql
 ```
 
-### Register with Claude Code
+## Running
+
+### MCP server
 
 ```bash
-claude mcp add -s user \
-  -e SUPABASE_DB_URL=your-connection-string \
-  -e OPENAI_API_KEY=your-key \
-  -e AWS_REGION=us-east-1 \
-  -e AWS_ACCESS_KEY_ID=your-key-id \
-  -e AWS_SECRET_ACCESS_KEY=your-secret \
-  open-brain -- node /path/to/open_brain/dist/index.js
+pnpm dev
 ```
 
-## Database Schema
+### Standalone HTTP server
 
-Single `thoughts` table with:
-- `raw_text` — the original thought
-- `embedding` — 1536-dim vector (HNSW indexed)
-- `context` — `work`, `personal`, or `unclassified`
-- `people` — text array (GIN indexed)
-- `topics` — text array (GIN indexed)
-- `thought_type` — decision, insight, meeting_note, idea, task, observation, reference, personal_note
-- `action_items` — JSONB array
-- `metadata` — JSONB for extensibility
+```bash
+pnpm serve
+```
+
+## OpenClaw Fit
+
+OpenClaw is an always-on assistant that lives inside messaging channels like WhatsApp. Open Brain is meant to be the memory and analysis layer behind that channel experience:
+
+- OpenClaw handles message ingress, routing, and conversational UX
+- Open Brain handles extraction, tagging, dedup, search, and recall
+
+That means the quality bar here is less about adding more endpoints and more about getting capture classification, canonical tags, and retrieval quality right.

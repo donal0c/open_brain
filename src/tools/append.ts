@@ -1,8 +1,7 @@
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { generateEmbedding } from '../services/embeddings.js';
-import { extractMetadata } from '../services/extraction.js';
-import { getThoughtById, updateThought } from '../db/queries.js';
+import { getThoughtById } from '../db/queries.js';
+import { appendToThought } from '../services/thought-operations.js';
 
 export const appendThoughtSchema = z.object({
   id: z.string().uuid().describe('The UUID of the thought to append to'),
@@ -31,34 +30,19 @@ export async function appendThoughtTool(input: AppendThoughtInput): Promise<Call
         isError: true,
       };
     }
-
-    const combinedText =
-      position === 'prepend'
-        ? text + separator + existing.raw_text
-        : existing.raw_text + separator + text;
-
-    const [embedding, metadata] = await Promise.all([
-      generateEmbedding(combinedText),
-      extractMetadata(combinedText),
-    ]);
-
-    const updated = await updateThought({
+    const result = await appendToThought({
       id,
-      raw_text: combinedText,
-      embedding,
-      context: metadata.context,
-      people: metadata.people,
-      topics: metadata.topics,
-      thought_type: metadata.thought_type,
-      action_items: metadata.action_items,
+      text,
+      position,
+      separator,
     });
-
-    if (!updated) {
+    if (!result) {
       return {
         content: [{ type: 'text', text: `Failed to update thought: ${id}` }],
         isError: true,
       };
     }
+    const updated = result.updated;
 
     const lines = [
       `Text ${position === 'prepend' ? 'prepended' : 'appended'} successfully.`,
@@ -68,7 +52,7 @@ export async function appendThoughtTool(input: AppendThoughtInput): Promise<Call
       `Type: ${updated.thought_type ?? 'none'}`,
       `Topics: ${updated.topics.length > 0 ? updated.topics.join(', ') : 'none'}`,
       `People: ${updated.people.length > 0 ? updated.people.join(', ') : 'none'}`,
-      `Total length: ${combinedText.length} characters`,
+      `Total length: ${result.combinedText.length} characters`,
       `Updated at: ${new Date(updated.updated_at).toISOString()}`,
     ];
 

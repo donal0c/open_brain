@@ -1,9 +1,8 @@
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { generateEmbedding } from '../services/embeddings.js';
-import { extractMetadata } from '../services/extraction.js';
-import { getThoughtById, updateThought } from '../db/queries.js';
-import type { ThoughtContext, ThoughtType, UpdateThoughtParams } from '../types/index.js';
+import { getThoughtById } from '../db/queries.js';
+import { updateThoughtRecord } from '../services/thought-operations.js';
+import type { ThoughtType } from '../types/index.js';
 
 export const updateThoughtSchema = z.object({
   id: z.string().uuid().describe('The UUID of the thought to update'),
@@ -14,9 +13,9 @@ export const updateThoughtSchema = z.object({
     .optional()
     .describe('New text content. If changed, embedding and metadata are automatically re-generated.'),
   context: z
-    .enum(['work', 'personal'])
+    .enum(['personal', 'family', 'health', 'finance', 'social', 'creative', 'travel'])
     .optional()
-    .describe('Override context classification'),
+    .describe('Override life domain classification'),
   people: z
     .array(z.string())
     .optional()
@@ -62,51 +61,27 @@ export async function updateThoughtTool(input: UpdateThoughtInput): Promise<Call
       };
     }
 
-    const params: UpdateThoughtParams = { id };
-
-    if (hasTextChange) {
-      // Path A: text changed — re-generate embedding and re-extract metadata
-      const [embedding, extracted] = await Promise.all([
-        generateEmbedding(text),
-        extractMetadata(text, context as ThoughtContext | undefined),
-      ]);
-
-      params.raw_text = text;
-      params.embedding = embedding;
-      // Explicit overrides take priority over re-extracted values
-      params.context = context ?? extracted.context;
-      params.people = people ?? extracted.people;
-      params.topics = topics ?? extracted.topics;
-      params.thought_type = (thought_type ?? extracted.thought_type) as ThoughtType | null;
-      params.action_items = extracted.action_items;
-    } else {
-      // Path B: metadata-only edit — no expensive calls
-      if (context !== undefined) params.context = context;
-      if (people !== undefined) params.people = people;
-      if (topics !== undefined) params.topics = topics;
-      if (thought_type !== undefined) params.thought_type = thought_type as ThoughtType;
-    }
-
-    const updated = await updateThought(params);
-    if (!updated) {
+    const result = await updateThoughtRecord({
+      id,
+      text,
+      context,
+      people,
+      topics,
+      thought_type: thought_type as ThoughtType | undefined,
+    });
+    if (!result) {
       return {
         content: [{ type: 'text', text: `Failed to update thought: ${id}` }],
         isError: true,
       };
     }
-
-    const changes: string[] = [];
-    if (hasTextChange) changes.push('text (embedding + metadata re-generated)');
-    if (context !== undefined) changes.push('context');
-    if (people !== undefined) changes.push('people');
-    if (topics !== undefined) changes.push('topics');
-    if (thought_type !== undefined) changes.push('thought_type');
+    const updated = result.updated;
 
     const lines = [
       `Thought updated successfully.`,
       ``,
       `ID: ${updated.id}`,
-      `Changed: ${changes.join(', ')}`,
+      `Changed: ${result.changedFields.join(', ')}`,
       `Context: ${updated.context}`,
       `Type: ${updated.thought_type ?? 'none'}`,
       `Topics: ${updated.topics.length > 0 ? updated.topics.join(', ') : 'none'}`,
