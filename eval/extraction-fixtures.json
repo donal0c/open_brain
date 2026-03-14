@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Travel planning thought",
+    "text": "Need to book flights to Lisbon, check hotels, and ask Sarah if she still wants to join.",
+    "expected_context": "travel",
+    "expected_type": "task",
+    "expected_topics": ["flights", "hotels", "travel planning"]
+  },
+  {
+    "name": "Health reflection",
+    "text": "I sleep better on days when I stop caffeine after lunch. Need to test that more deliberately this week.",
+    "expected_context": "health",
+    "expected_type": "insight",
+    "expected_topics": ["sleep", "caffeine", "habits"]
+  }
+]

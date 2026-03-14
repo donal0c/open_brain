@@ -25,10 +25,10 @@ export async function generateEmbedding(text: string): Promise<number[]> {
  * Generate a contextual embedding by prepending metadata to the text.
  * This gives the embedding model richer context for better similarity matching.
  */
-export async function generateContextualEmbedding(
+export function buildContextualText(
   text: string,
   metadata: { context?: string; topics?: string[]; people?: string[] }
-): Promise<number[]> {
+): string {
   const parts: string[] = [];
 
   if (metadata.context) {
@@ -41,9 +41,15 @@ export async function generateContextualEmbedding(
     parts.push(`[people: ${metadata.people.join(', ')}]`);
   }
 
-  const contextualText = parts.length > 0
+  return parts.length > 0
     ? `${parts.join(' ')} ${text}`
     : text;
+}
 
+export async function generateContextualEmbedding(
+  text: string,
+  metadata: { context?: string; topics?: string[]; people?: string[] }
+): Promise<number[]> {
+  const contextualText = buildContextualText(text, metadata);
   return generateEmbedding(contextualText);
 }

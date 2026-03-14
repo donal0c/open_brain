@@ -650,7 +650,7 @@ async function main() {
   console.error('Open Brain MCP server started');
 
   if (process.env.API_TOKEN) {
-    startHttpServer();
+    await startHttpServer();
   }
 }
 

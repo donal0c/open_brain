@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Existing duplicate should be found",
+    "text": "Need to review the budget and move subscriptions I don't use anymore.",
+    "expect_duplicate": true
+  },
+  {
+    "name": "Novel thought should stay unique",
+    "text": "Sketch a weekend-only capture flow that turns voice rambles into one clean summary note.",
+    "expect_duplicate": false
+  }
+]

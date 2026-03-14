@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { createServer as createNetServer } from 'node:net';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { cors } from 'hono/cors';
@@ -28,6 +29,7 @@ import {
   BedrockRuntimeClient,
   InvokeModelCommand,
 } from '@aws-sdk/client-bedrock-runtime';
+import { isAdminHttpEnabled } from './http-config.js';
 
 const VALID_DOMAINS: LifeDomain[] = [
   'personal', 'family', 'health', 'finance',
@@ -50,9 +52,34 @@ function getBedrockClient(): BedrockRuntimeClient {
   return bedrockClient;
 }
 
-export function startHttpServer(): void {
+async function ensurePortAvailable(port: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const server = createNetServer();
+
+    server.once('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EADDRINUSE') {
+        reject(new Error(`HTTP port ${port} is already in use`));
+        return;
+      }
+      reject(error);
+    });
+
+    server.listen(port, () => {
+      server.close((closeError) => {
+        if (closeError) {
+          reject(closeError);
+          return;
+        }
+        resolve();
+      });
+    });
+  });
+}
+
+export async function startHttpServer(): Promise<void> {
   const port = parseInt(process.env.HTTP_PORT || '3001', 10);
   const apiToken = process.env.API_TOKEN;
+  const adminHttpEnabled = isAdminHttpEnabled(process.env.OPEN_BRAIN_ENABLE_ADMIN_HTTP);
 
   const app = new Hono();
 
@@ -128,176 +155,6 @@ export function startHttpServer(): void {
         people: thought.people,
         action_items: thought.action_items,
       }, 201);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 500);
-    }
-  });
-
-  // GET /api/thought/:id - Get a single thought by ID
-  app.get('/api/thought/:id', async (c) => {
-    try {
-      const id = c.req.param('id');
-      const thought = await getThoughtById(id);
-
-      if (!thought) {
-        return c.json({ error: 'Thought not found' }, 404);
-      }
-
-      return c.json({
-        id: thought.id,
-        text: thought.raw_text,
-        context: thought.context,
-        type: thought.thought_type,
-        topics: thought.topics,
-        people: thought.people,
-        action_items: thought.action_items,
-        confidence: thought.confidence,
-        active: thought.active,
-        archived_reason: thought.archived_reason,
-        created_at: thought.created_at,
-        updated_at: thought.updated_at,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 500);
-    }
-  });
-
-  // PATCH /api/thought/:id - Update a thought
-  app.patch('/api/thought/:id', async (c) => {
-    try {
-      const id = c.req.param('id');
-      const body = await c.req.json<{
-        text?: string;
-        context?: string;
-        people?: string[];
-        topics?: string[];
-        thought_type?: string;
-      }>();
-
-      const hasTextChange = body.text !== undefined;
-      const hasMetadataChange =
-        body.context !== undefined ||
-        body.people !== undefined ||
-        body.topics !== undefined ||
-        body.thought_type !== undefined;
-
-      if (!hasTextChange && !hasMetadataChange) {
-        return c.json({ error: 'No fields to update. Provide at least one field.' }, 400);
-      }
-
-      if (body.context && !VALID_DOMAINS.includes(body.context as LifeDomain)) {
-        return c.json({ error: `Invalid context. Must be one of: ${VALID_DOMAINS.join(', ')}` }, 400);
-      }
-
-      if (body.thought_type && !VALID_THOUGHT_TYPES.includes(body.thought_type as ThoughtType)) {
-        return c.json({ error: `Invalid thought_type. Must be one of: ${VALID_THOUGHT_TYPES.join(', ')}` }, 400);
-      }
-
-      const existing = await getThoughtById(id);
-      if (!existing) {
-        return c.json({ error: 'Thought not found' }, 404);
-      }
-
-      if (hasTextChange) {
-        const text = body.text!.trim();
-        if (text.length === 0 || text.length > 10000) {
-          return c.json({ error: 'text must be between 1 and 10000 characters' }, 400);
-        }
-      }
-      const result = await updateThoughtRecord({
-        id,
-        text: body.text,
-        context: body.context as LifeDomain | undefined,
-        people: body.people,
-        topics: body.topics,
-        thought_type: body.thought_type as ThoughtType | undefined,
-      });
-      if (!result) {
-        return c.json({ error: 'Failed to update thought' }, 500);
-      }
-      const updated = result.updated;
-
-      return c.json({
-        id: updated.id,
-        text: updated.raw_text,
-        context: updated.context,
-        type: updated.thought_type,
-        topics: updated.topics,
-        people: updated.people,
-        action_items: updated.action_items,
-        confidence: updated.confidence,
-        active: updated.active,
-        updated_at: updated.updated_at,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 500);
-    }
-  });
-
-  // POST /api/thought/:id/append - Append or prepend text to a thought
-  app.post('/api/thought/:id/append', async (c) => {
-    try {
-      const id = c.req.param('id');
-      const body = await c.req.json<{
-        text?: string;
-        position?: 'append' | 'prepend';
-        separator?: string;
-      }>();
-
-      if (!body.text || typeof body.text !== 'string' || body.text.trim().length === 0) {
-        return c.json({ error: 'text is required and must be a non-empty string' }, 400);
-      }
-
-      if (body.text.length > 10000) {
-        return c.json({ error: 'text must be 10000 characters or less' }, 400);
-      }
-
-      const position = body.position ?? 'append';
-      if (position !== 'append' && position !== 'prepend') {
-        return c.json({ error: 'position must be "append" or "prepend"' }, 400);
-      }
-
-      const separator = body.separator ?? '\n\n';
-
-      const existing = await getThoughtById(id);
-      if (!existing) {
-        return c.json({ error: 'Thought not found' }, 404);
-      }
-
-      const combinedText =
-        position === 'prepend'
-          ? body.text.trim() + separator + existing.raw_text
-          : existing.raw_text + separator + body.text.trim();
-
-      if (combinedText.length > 10000) {
-        return c.json({ error: 'Combined text would exceed 10000 character limit' }, 400);
-      }
-
-      const result = await appendToThought({
-        id,
-        text: body.text,
-        position,
-        separator,
-      });
-      if (!result) {
-        return c.json({ error: 'Failed to update thought' }, 500);
-      }
-      const updated = result.updated;
-
-      return c.json({
-        id: updated.id,
-        text: updated.raw_text,
-        context: updated.context,
-        type: updated.thought_type,
-        topics: updated.topics,
-        people: updated.people,
-        action_items: updated.action_items,
-        confidence: updated.confidence,
-        updated_at: updated.updated_at,
-      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return c.json({ error: message }, 500);
@@ -398,267 +255,428 @@ export function startHttpServer(): void {
     }
   });
 
-  // GET /api/stats - Get thought statistics
-  app.get('/api/stats', async (c) => {
-    try {
-      const stats = await getStats();
-      return c.json(stats);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 500);
-    }
-  });
+  if (adminHttpEnabled) {
+    app.get('/api/thought/:id', async (c) => {
+      try {
+        const id = c.req.param('id');
+        const thought = await getThoughtById(id);
 
-  // POST /api/search-metadata - Search by metadata filters
-  app.post('/api/search-metadata', async (c) => {
-    try {
-      const body = await c.req.json<{
-        people?: string[];
-        topics?: string[];
-        thought_type?: string;
-        context?: string;
-        date_from?: string;
-        date_to?: string;
-        limit?: number;
-      }>();
+        if (!thought) {
+          return c.json({ error: 'Thought not found' }, 404);
+        }
 
-      const context = body.context as LifeDomain | undefined;
-      if (context && !VALID_DOMAINS.includes(context)) {
-        return c.json({ error: `Invalid context. Must be one of: ${VALID_DOMAINS.join(', ')}` }, 400);
+        return c.json({
+          id: thought.id,
+          text: thought.raw_text,
+          context: thought.context,
+          type: thought.thought_type,
+          topics: thought.topics,
+          people: thought.people,
+          action_items: thought.action_items,
+          confidence: thought.confidence,
+          active: thought.active,
+          archived_reason: thought.archived_reason,
+          created_at: thought.created_at,
+          updated_at: thought.updated_at,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return c.json({ error: message }, 500);
       }
+    });
 
-      if (body.thought_type && !VALID_THOUGHT_TYPES.includes(body.thought_type as ThoughtType)) {
-        return c.json({ error: `Invalid thought_type. Must be one of: ${VALID_THOUGHT_TYPES.join(', ')}` }, 400);
+    app.patch('/api/thought/:id', async (c) => {
+      try {
+        const id = c.req.param('id');
+        const body = await c.req.json<{
+          text?: string;
+          context?: string;
+          people?: string[];
+          topics?: string[];
+          thought_type?: string;
+        }>();
+
+        const hasTextChange = body.text !== undefined;
+        const hasMetadataChange =
+          body.context !== undefined ||
+          body.people !== undefined ||
+          body.topics !== undefined ||
+          body.thought_type !== undefined;
+
+        if (!hasTextChange && !hasMetadataChange) {
+          return c.json({ error: 'No fields to update. Provide at least one field.' }, 400);
+        }
+
+        if (body.context && !VALID_DOMAINS.includes(body.context as LifeDomain)) {
+          return c.json({ error: `Invalid context. Must be one of: ${VALID_DOMAINS.join(', ')}` }, 400);
+        }
+
+        if (body.thought_type && !VALID_THOUGHT_TYPES.includes(body.thought_type as ThoughtType)) {
+          return c.json({ error: `Invalid thought_type. Must be one of: ${VALID_THOUGHT_TYPES.join(', ')}` }, 400);
+        }
+
+        const existing = await getThoughtById(id);
+        if (!existing) {
+          return c.json({ error: 'Thought not found' }, 404);
+        }
+
+        if (hasTextChange) {
+          const text = body.text!.trim();
+          if (text.length === 0 || text.length > 10000) {
+            return c.json({ error: 'text must be between 1 and 10000 characters' }, 400);
+          }
+        }
+
+        const result = await updateThoughtRecord({
+          id,
+          text: body.text,
+          context: body.context as LifeDomain | undefined,
+          people: body.people,
+          topics: body.topics,
+          thought_type: body.thought_type as ThoughtType | undefined,
+        });
+        if (!result) {
+          return c.json({ error: 'Failed to update thought' }, 500);
+        }
+        const updated = result.updated;
+
+        return c.json({
+          id: updated.id,
+          text: updated.raw_text,
+          context: updated.context,
+          type: updated.thought_type,
+          topics: updated.topics,
+          people: updated.people,
+          action_items: updated.action_items,
+          confidence: updated.confidence,
+          active: updated.active,
+          updated_at: updated.updated_at,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return c.json({ error: message }, 500);
       }
+    });
 
-      const limit = Math.min(Math.max(body.limit ?? 20, 1), 100);
+    app.post('/api/thought/:id/append', async (c) => {
+      try {
+        const id = c.req.param('id');
+        const body = await c.req.json<{
+          text?: string;
+          position?: 'append' | 'prepend';
+          separator?: string;
+        }>();
 
-      const results = await searchByMetadata({
-        people: body.people,
-        topics: body.topics,
-        thought_type: body.thought_type as ThoughtType | undefined,
-        context,
-        date_from: body.date_from,
-        date_to: body.date_to,
-        limit,
-      });
+        if (!body.text || typeof body.text !== 'string' || body.text.trim().length === 0) {
+          return c.json({ error: 'text is required and must be a non-empty string' }, 400);
+        }
 
-      return c.json({
-        count: results.length,
-        thoughts: results.map((t) => ({
-          id: t.id,
-          text: t.raw_text,
-          context: t.context,
-          type: t.thought_type,
-          topics: t.topics,
-          people: t.people,
-          action_items: t.action_items,
-          confidence: t.confidence,
-          created_at: t.created_at,
-        })),
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 500);
-    }
-  });
+        if (body.text.length > 10000) {
+          return c.json({ error: 'text must be 10000 characters or less' }, 400);
+        }
 
-  // POST /api/find-related - Find thoughts related to a given thought
-  app.post('/api/find-related', async (c) => {
-    try {
-      const body = await c.req.json<{ id?: string; limit?: number }>();
+        const position = body.position ?? 'append';
+        if (position !== 'append' && position !== 'prepend') {
+          return c.json({ error: 'position must be "append" or "prepend"' }, 400);
+        }
 
-      if (!body.id || typeof body.id !== 'string') {
-        return c.json({ error: 'id is required' }, 400);
+        const separator = body.separator ?? '\n\n';
+
+        const existing = await getThoughtById(id);
+        if (!existing) {
+          return c.json({ error: 'Thought not found' }, 404);
+        }
+
+        const combinedText =
+          position === 'prepend'
+            ? body.text.trim() + separator + existing.raw_text
+            : existing.raw_text + separator + body.text.trim();
+
+        if (combinedText.length > 10000) {
+          return c.json({ error: 'Combined text would exceed 10000 character limit' }, 400);
+        }
+
+        const result = await appendToThought({
+          id,
+          text: body.text,
+          position,
+          separator,
+        });
+        if (!result) {
+          return c.json({ error: 'Failed to update thought' }, 500);
+        }
+        const updated = result.updated;
+
+        return c.json({
+          id: updated.id,
+          text: updated.raw_text,
+          context: updated.context,
+          type: updated.thought_type,
+          topics: updated.topics,
+          people: updated.people,
+          action_items: updated.action_items,
+          confidence: updated.confidence,
+          updated_at: updated.updated_at,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return c.json({ error: message }, 500);
       }
+    });
 
-      const thought = await getThoughtById(body.id);
-      if (!thought) {
-        return c.json({ error: 'Thought not found' }, 404);
+    app.get('/api/stats', async (c) => {
+      try {
+        const stats = await getStats();
+        return c.json(stats);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return c.json({ error: message }, 500);
       }
+    });
 
-      const embedding = await getThoughtEmbedding(body.id);
-      if (!embedding) {
-        return c.json({ error: 'Thought has no embedding' }, 400);
+    app.post('/api/search-metadata', async (c) => {
+      try {
+        const body = await c.req.json<{
+          people?: string[];
+          topics?: string[];
+          thought_type?: string;
+          context?: string;
+          date_from?: string;
+          date_to?: string;
+          limit?: number;
+        }>();
+
+        const context = body.context as LifeDomain | undefined;
+        if (context && !VALID_DOMAINS.includes(context)) {
+          return c.json({ error: `Invalid context. Must be one of: ${VALID_DOMAINS.join(', ')}` }, 400);
+        }
+
+        if (body.thought_type && !VALID_THOUGHT_TYPES.includes(body.thought_type as ThoughtType)) {
+          return c.json({ error: `Invalid thought_type. Must be one of: ${VALID_THOUGHT_TYPES.join(', ')}` }, 400);
+        }
+
+        const limit = Math.min(Math.max(body.limit ?? 20, 1), 100);
+
+        const results = await searchByMetadata({
+          people: body.people,
+          topics: body.topics,
+          thought_type: body.thought_type as ThoughtType | undefined,
+          context,
+          date_from: body.date_from,
+          date_to: body.date_to,
+          limit,
+        });
+
+        return c.json({
+          count: results.length,
+          thoughts: results.map((t) => ({
+            id: t.id,
+            text: t.raw_text,
+            context: t.context,
+            type: t.thought_type,
+            topics: t.topics,
+            people: t.people,
+            action_items: t.action_items,
+            confidence: t.confidence,
+            created_at: t.created_at,
+          })),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return c.json({ error: message }, 500);
       }
+    });
 
-      const limit = Math.min(Math.max(body.limit ?? 5, 1), 20);
-      const results = await findRelated(body.id, embedding, limit);
+    app.post('/api/find-related', async (c) => {
+      try {
+        const body = await c.req.json<{ id?: string; limit?: number }>();
 
-      return c.json({
-        source_id: body.id,
-        count: results.length,
-        thoughts: results.map((t) => ({
-          id: t.id,
-          text: t.raw_text,
-          context: t.context,
-          type: t.thought_type,
-          topics: t.topics,
-          people: t.people,
-          similarity: Number(t.similarity).toFixed(3),
-          confidence: t.confidence,
-          created_at: t.created_at,
-        })),
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 500);
-    }
-  });
+        if (!body.id || typeof body.id !== 'string') {
+          return c.json({ error: 'id is required' }, 400);
+        }
 
-  // POST /api/reinforce - Increment a thought's confidence
-  app.post('/api/reinforce', async (c) => {
-    try {
-      const body = await c.req.json<{ id?: string }>();
+        const thought = await getThoughtById(body.id);
+        if (!thought) {
+          return c.json({ error: 'Thought not found' }, 404);
+        }
 
-      if (!body.id || typeof body.id !== 'string') {
-        return c.json({ error: 'id is required' }, 400);
+        const embedding = await getThoughtEmbedding(body.id);
+        if (!embedding) {
+          return c.json({ error: 'Thought has no embedding' }, 400);
+        }
+
+        const limit = Math.min(Math.max(body.limit ?? 5, 1), 20);
+        const results = await findRelated(body.id, embedding, limit);
+
+        return c.json({
+          source_id: body.id,
+          count: results.length,
+          thoughts: results.map((t) => ({
+            id: t.id,
+            text: t.raw_text,
+            context: t.context,
+            type: t.thought_type,
+            topics: t.topics,
+            people: t.people,
+            similarity: Number(t.similarity).toFixed(3),
+            confidence: t.confidence,
+            created_at: t.created_at,
+          })),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return c.json({ error: message }, 500);
       }
+    });
 
-      const thought = await reinforceThought(body.id);
-      if (!thought) {
-        return c.json({ error: 'Thought not found or archived' }, 404);
+    app.post('/api/reinforce', async (c) => {
+      try {
+        const body = await c.req.json<{ id?: string }>();
+
+        if (!body.id || typeof body.id !== 'string') {
+          return c.json({ error: 'id is required' }, 400);
+        }
+
+        const thought = await reinforceThought(body.id);
+        if (!thought) {
+          return c.json({ error: 'Thought not found or archived' }, 404);
+        }
+
+        return c.json({
+          id: thought.id,
+          confidence: thought.confidence,
+          text: thought.raw_text.length > 200 ? thought.raw_text.slice(0, 200) + '...' : thought.raw_text,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return c.json({ error: message }, 500);
       }
+    });
 
-      return c.json({
-        id: thought.id,
-        confidence: thought.confidence,
-        text: thought.raw_text.length > 200 ? thought.raw_text.slice(0, 200) + '...' : thought.raw_text,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 500);
-    }
-  });
+    app.post('/api/archive', async (c) => {
+      try {
+        const body = await c.req.json<{ id?: string; reason?: string }>();
 
-  // POST /api/archive - Archive a thought
-  app.post('/api/archive', async (c) => {
-    try {
-      const body = await c.req.json<{ id?: string; reason?: string }>();
+        if (!body.id || typeof body.id !== 'string') {
+          return c.json({ error: 'id is required' }, 400);
+        }
 
-      if (!body.id || typeof body.id !== 'string') {
-        return c.json({ error: 'id is required' }, 400);
+        if (!body.reason || typeof body.reason !== 'string' || body.reason.trim().length === 0) {
+          return c.json({ error: 'reason is required' }, 400);
+        }
+
+        if (body.reason.length > 500) {
+          return c.json({ error: 'reason must be 500 characters or less' }, 400);
+        }
+
+        const thought = await archiveThought(body.id, body.reason.trim());
+        if (!thought) {
+          return c.json({ error: 'Thought not found' }, 404);
+        }
+
+        return c.json({
+          id: thought.id,
+          archived: true,
+          reason: body.reason.trim(),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return c.json({ error: message }, 500);
       }
+    });
 
-      if (!body.reason || typeof body.reason !== 'string' || body.reason.trim().length === 0) {
-        return c.json({ error: 'reason is required' }, 400);
+    app.post('/api/unarchive', async (c) => {
+      try {
+        const body = await c.req.json<{ id?: string }>();
+
+        if (!body.id || typeof body.id !== 'string') {
+          return c.json({ error: 'id is required' }, 400);
+        }
+
+        const thought = await unarchiveThought(body.id);
+        if (!thought) {
+          return c.json({ error: 'Thought not found' }, 404);
+        }
+
+        return c.json({
+          id: thought.id,
+          archived: false,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return c.json({ error: message }, 500);
       }
+    });
 
-      if (body.reason.length > 500) {
-        return c.json({ error: 'reason must be 500 characters or less' }, 400);
+    app.get('/api/timeline', async (c) => {
+      try {
+        const topic = c.req.query('topic');
+        const person = c.req.query('person');
+
+        if (!topic && !person) {
+          return c.json({ error: 'At least one of topic or person query param is required' }, 400);
+        }
+
+        const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 100);
+        const results = await getTimeline({ topic, person, limit });
+
+        return c.json({
+          count: results.length,
+          thoughts: results.map((t) => ({
+            id: t.id,
+            text: t.raw_text,
+            context: t.context,
+            type: t.thought_type,
+            topics: t.topics,
+            people: t.people,
+            confidence: t.confidence,
+            created_at: t.created_at,
+          })),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return c.json({ error: message }, 500);
       }
+    });
 
-      const thought = await archiveThought(body.id, body.reason.trim());
-      if (!thought) {
-        return c.json({ error: 'Thought not found' }, 404);
-      }
+    app.post('/api/summarize', async (c) => {
+      try {
+        const body = await c.req.json<{ topic?: string; max_thoughts?: number }>();
 
-      return c.json({
-        id: thought.id,
-        archived: true,
-        reason: body.reason.trim(),
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 500);
-    }
-  });
+        if (!body.topic || typeof body.topic !== 'string' || body.topic.trim().length === 0) {
+          return c.json({ error: 'topic is required' }, 400);
+        }
 
-  // POST /api/unarchive - Unarchive a thought
-  app.post('/api/unarchive', async (c) => {
-    try {
-      const body = await c.req.json<{ id?: string }>();
+        if (body.topic.length > 200) {
+          return c.json({ error: 'topic must be 200 characters or less' }, 400);
+        }
 
-      if (!body.id || typeof body.id !== 'string') {
-        return c.json({ error: 'id is required' }, 400);
-      }
+        const maxThoughts = Math.min(Math.max(body.max_thoughts ?? 20, 1), 50);
+        const thoughts = await getThoughtsByTopic(body.topic.trim(), maxThoughts);
 
-      const thought = await unarchiveThought(body.id);
-      if (!thought) {
-        return c.json({ error: 'Thought not found' }, 404);
-      }
+        if (thoughts.length === 0) {
+          return c.json({ topic: body.topic.trim(), thought_count: 0, summary: null });
+        }
 
-      return c.json({
-        id: thought.id,
-        archived: false,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 500);
-    }
-  });
+        const thoughtTexts = thoughts.map((t, i) => {
+          const date = new Date(t.created_at).toISOString().split('T')[0];
+          return `[${i + 1}] (${date}, ${t.context}) ${t.raw_text}`;
+        }).join('\n\n');
 
-  // GET /api/timeline - Chronological timeline filtered by topic or person
-  app.get('/api/timeline', async (c) => {
-    try {
-      const topic = c.req.query('topic');
-      const person = c.req.query('person');
+        const modelId = process.env.BEDROCK_MODEL_ID || 'us.anthropic.claude-sonnet-4-6';
 
-      if (!topic && !person) {
-        return c.json({ error: 'At least one of topic or person query param is required' }, 400);
-      }
-
-      const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 100);
-      const results = await getTimeline({ topic, person, limit });
-
-      return c.json({
-        count: results.length,
-        thoughts: results.map((t) => ({
-          id: t.id,
-          text: t.raw_text,
-          context: t.context,
-          type: t.thought_type,
-          topics: t.topics,
-          people: t.people,
-          confidence: t.confidence,
-          created_at: t.created_at,
-        })),
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 500);
-    }
-  });
-
-  // POST /api/summarize - Synthesize thoughts on a topic using LLM
-  app.post('/api/summarize', async (c) => {
-    try {
-      const body = await c.req.json<{ topic?: string; max_thoughts?: number }>();
-
-      if (!body.topic || typeof body.topic !== 'string' || body.topic.trim().length === 0) {
-        return c.json({ error: 'topic is required' }, 400);
-      }
-
-      if (body.topic.length > 200) {
-        return c.json({ error: 'topic must be 200 characters or less' }, 400);
-      }
-
-      const maxThoughts = Math.min(Math.max(body.max_thoughts ?? 20, 1), 50);
-      const thoughts = await getThoughtsByTopic(body.topic.trim(), maxThoughts);
-
-      if (thoughts.length === 0) {
-        return c.json({ topic: body.topic.trim(), thought_count: 0, summary: null });
-      }
-
-      const thoughtTexts = thoughts.map((t, i) => {
-        const date = new Date(t.created_at).toISOString().split('T')[0];
-        return `[${i + 1}] (${date}, ${t.context}) ${t.raw_text}`;
-      }).join('\n\n');
-
-      const modelId = process.env.BEDROCK_MODEL_ID || 'us.anthropic.claude-sonnet-4-6';
-
-      const command = new InvokeModelCommand({
-        modelId,
-        contentType: 'application/json',
-        accept: 'application/json',
-        body: JSON.stringify({
-          anthropic_version: 'bedrock-2023-05-31',
-          max_tokens: 2048,
-          temperature: 0,
-          messages: [
-            {
-              role: 'user',
-              content: `You are synthesizing a person's thoughts on the topic "${body.topic.trim()}". Below are ${thoughts.length} thought entries. Provide a concise synthesis that:
+        const command = new InvokeModelCommand({
+          modelId,
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify({
+            anthropic_version: 'bedrock-2023-05-31',
+            max_tokens: 2048,
+            temperature: 0,
+            messages: [
+              {
+                role: 'user',
+                content: `You are synthesizing a person's thoughts on the topic "${body.topic.trim()}". Below are ${thoughts.length} thought entries. Provide a concise synthesis that:
 
 1. Summarizes the key themes and patterns across these thoughts
 2. Notes any evolution or changes in thinking over time
@@ -669,26 +687,28 @@ Be direct and concise. Use bullet points where appropriate.
 
 Thoughts:
 ${thoughtTexts}`,
-            },
-          ],
-        }),
-      });
+              },
+            ],
+          }),
+        });
 
-      const response = await getBedrockClient().send(command);
-      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-      const summary = responseBody.content[0].text;
+        const response = await getBedrockClient().send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        const summary = responseBody.content[0].text;
 
-      return c.json({
-        topic: body.topic.trim(),
-        thought_count: thoughts.length,
-        summary,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 500);
-    }
-  });
+        return c.json({
+          topic: body.topic.trim(),
+          thought_count: thoughts.length,
+          summary,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return c.json({ error: message }, 500);
+      }
+    });
+  }
 
+  await ensurePortAvailable(port);
   serve({ fetch: app.fetch, port }, () => {
     console.error(`HTTP server listening on port ${port}`);
   });

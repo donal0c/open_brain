@@ -93,6 +93,7 @@ AWS_SECRET_ACCESS_KEY=...
 BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-6
 API_TOKEN=...           # Required for standalone HTTP use
 HTTP_PORT=3001          # Optional
+OPEN_BRAIN_ENABLE_ADMIN_HTTP=false
 ```
 
 ### Database Setup
@@ -117,6 +118,23 @@ pnpm dev
 
 ```bash
 pnpm serve
+```
+
+By default, the HTTP server exposes the OpenClaw/mobile core only:
+
+- `POST /api/capture`
+- `GET /api/search`
+- `GET /api/recent`
+- `POST /api/ask`
+
+Set `OPEN_BRAIN_ENABLE_ADMIN_HTTP=true` to expose the maintenance-heavy routes such as update, archive, timeline, summarize, and metadata search.
+
+## Quality Gates
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm eval
 ```
 
 ## OpenClaw Fit

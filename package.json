@@ -12,7 +12,9 @@
     "dev": "tsx src/index.ts",
     "serve": "tsx src/http-standalone.ts",
     "typecheck": "tsc --noEmit",
-    "setup-db": "tsx scripts/setup-db.ts"
+    "setup-db": "tsx scripts/setup-db.ts",
+    "test": "pnpm build && node --test dist/tests/*.test.js",
+    "eval": "tsx scripts/eval.ts"
   },
   "engines": {
     "node": ">=20"

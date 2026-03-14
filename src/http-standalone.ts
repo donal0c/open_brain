@@ -23,4 +23,8 @@ if (missing.length > 0) {
 }
 
 console.error('Starting Open Brain HTTP server (standalone mode)...');
-startHttpServer();
+startHttpServer().catch((error) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`FATAL: ${message}`);
+  process.exit(1);
+});

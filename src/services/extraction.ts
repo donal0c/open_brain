@@ -33,7 +33,7 @@ function getClient(): BedrockRuntimeClient {
   return bedrockClient;
 }
 
-const EXTRACTION_PROMPT = `Analyze the following thought/note and extract structured metadata. Return ONLY valid JSON with no additional text.
+export const EXTRACTION_PROMPT = `Analyze the following thought/note and extract structured metadata. Return ONLY valid JSON with no additional text.
 
 {
   "people": ["list of people mentioned by name"],
@@ -61,34 +61,12 @@ Rules:
 Thought to analyze:
 `;
 
-export async function extractMetadata(
-  rawText: string,
+export function normalizeExtractionResponse(
+  responseText: string,
   explicitContext?: LifeDomain
-): Promise<ExtractedMetadata> {
-  const modelId = process.env.BEDROCK_MODEL_ID || 'us.anthropic.claude-sonnet-4-6';
+): ExtractedMetadata {
+  let text = responseText;
 
-  const command = new InvokeModelCommand({
-    modelId,
-    contentType: 'application/json',
-    accept: 'application/json',
-    body: JSON.stringify({
-      anthropic_version: 'bedrock-2023-05-31',
-      max_tokens: 1024,
-      temperature: 0,
-      messages: [
-        {
-          role: 'user',
-          content: EXTRACTION_PROMPT + rawText,
-        },
-      ],
-    }),
-  });
-
-  const response = await getClient().send(command);
-  const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-  let text: string = responseBody.content[0].text;
-
-  // Strip accidental markdown fences
   text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
   let parsed: Record<string, unknown>;
@@ -134,4 +112,32 @@ export async function extractMetadata(
     action_items,
     context: explicitContext ?? extractedContext,
   };
+}
+
+export async function extractMetadata(
+  rawText: string,
+  explicitContext?: LifeDomain
+): Promise<ExtractedMetadata> {
+  const modelId = process.env.BEDROCK_MODEL_ID || 'us.anthropic.claude-sonnet-4-6';
+
+  const command = new InvokeModelCommand({
+    modelId,
+    contentType: 'application/json',
+    accept: 'application/json',
+    body: JSON.stringify({
+      anthropic_version: 'bedrock-2023-05-31',
+      max_tokens: 1024,
+      temperature: 0,
+      messages: [
+        {
+          role: 'user',
+          content: EXTRACTION_PROMPT + rawText,
+        },
+      ],
+    }),
+  });
+
+  const response = await getClient().send(command);
+  const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+  return normalizeExtractionResponse(responseBody.content[0].text, explicitContext);
 }

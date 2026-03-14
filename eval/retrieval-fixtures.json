@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Find finance thoughts",
+    "query": "What have I said about budgeting lately?",
+    "expected_context": "finance"
+  },
+  {
+    "name": "Find travel planning thoughts",
+    "query": "What am I planning for the Lisbon trip?",
+    "expected_topic": "travel planning"
+  }
+]
