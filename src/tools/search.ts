@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { generateEmbedding } from '../services/embeddings.js';
-import { semanticSearch } from '../db/queries.js';
+import { hybridSearch } from '../db/queries.js';
 
 export const semanticSearchSchema = z.object({
   query: z.string().min(1).max(2000).describe('Natural language search query'),
   context: z
-    .enum(['work', 'personal'])
+    .enum(['personal', 'family', 'health', 'finance', 'social', 'creative', 'travel'])
     .optional()
-    .describe('Optional: filter by context'),
+    .describe('Optional: filter by life domain'),
   limit: z
     .number()
     .int()
@@ -25,7 +25,7 @@ export async function searchThoughts(input: SemanticSearchInput): Promise<CallTo
     const { query, context, limit } = semanticSearchSchema.parse(input);
 
     const queryEmbedding = await generateEmbedding(query);
-    const results = await semanticSearch(queryEmbedding, { context, limit });
+    const results = await hybridSearch(query, queryEmbedding, { context, limit });
 
     if (results.length === 0) {
       return {

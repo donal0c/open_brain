@@ -5,12 +5,20 @@ CREATE TABLE IF NOT EXISTS thoughts (
   raw_text TEXT NOT NULL,
   embedding vector(1536),
   context VARCHAR(20) NOT NULL DEFAULT 'unclassified'
-    CHECK (context IN ('work', 'personal', 'unclassified')),
+    CHECK (context IN ('personal', 'family', 'health', 'finance', 'social', 'creative', 'travel', 'unclassified')),
   people TEXT[] DEFAULT '{}',
   topics TEXT[] DEFAULT '{}',
   thought_type VARCHAR(50),
   action_items JSONB DEFAULT '[]',
   metadata JSONB DEFAULT '{}',
+  confidence INT NOT NULL DEFAULT 1,
+  active BOOLEAN NOT NULL DEFAULT true,
+  archived_reason TEXT,
+  idempotency_key VARCHAR(64),
+  search_vector tsvector GENERATED ALWAYS AS (
+    setweight(to_tsvector('english', COALESCE(raw_text, '')), 'A') ||
+    setweight(to_tsvector('english', COALESCE(array_to_string(topics, ' '), '')), 'B')
+  ) STORED,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -23,6 +31,18 @@ CREATE INDEX IF NOT EXISTS thoughts_embedding_hnsw
 CREATE INDEX IF NOT EXISTS thoughts_context_idx ON thoughts (context);
 CREATE INDEX IF NOT EXISTS thoughts_created_at_idx ON thoughts (created_at DESC);
 CREATE INDEX IF NOT EXISTS thoughts_type_idx ON thoughts (thought_type);
+
+-- GIN index for full-text search
+CREATE INDEX IF NOT EXISTS thoughts_search_vector_idx
+  ON thoughts USING gin (search_vector);
+
+-- Indexes for confidence and active status
+CREATE INDEX IF NOT EXISTS thoughts_active_idx ON thoughts (active);
+CREATE INDEX IF NOT EXISTS thoughts_confidence_idx ON thoughts (confidence DESC);
+
+-- Unique index for idempotency keys (sparse - only non-null values)
+CREATE UNIQUE INDEX IF NOT EXISTS thoughts_idempotency_key_idx
+  ON thoughts (idempotency_key) WHERE idempotency_key IS NOT NULL;
 
 -- GIN indexes for array overlap queries
 CREATE INDEX IF NOT EXISTS thoughts_people_idx ON thoughts USING gin (people);

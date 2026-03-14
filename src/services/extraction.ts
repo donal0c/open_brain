@@ -2,21 +2,24 @@ import {
   BedrockRuntimeClient,
   InvokeModelCommand,
 } from '@aws-sdk/client-bedrock-runtime';
-import type { ExtractedMetadata, ThoughtContext, ThoughtType } from '../types/index.js';
+import type { ExtractedMetadata, LifeDomain, ThoughtType } from '../types/index.js';
 
 const VALID_THOUGHT_TYPES: ThoughtType[] = [
   'decision', 'insight', 'meeting_note', 'idea',
   'task', 'observation', 'reference', 'personal_note',
 ];
 
-const VALID_CONTEXTS: ThoughtContext[] = ['work', 'personal', 'unclassified'];
+const VALID_DOMAINS: LifeDomain[] = [
+  'personal', 'family', 'health', 'finance',
+  'social', 'creative', 'travel', 'unclassified',
+];
 
 function isValidThoughtType(value: string): value is ThoughtType {
   return VALID_THOUGHT_TYPES.includes(value as ThoughtType);
 }
 
-function isValidContext(value: string): value is ThoughtContext {
-  return VALID_CONTEXTS.includes(value as ThoughtContext);
+function isValidDomain(value: string): value is LifeDomain {
+  return VALID_DOMAINS.includes(value as LifeDomain);
 }
 
 let bedrockClient: BedrockRuntimeClient | null = null;
@@ -37,7 +40,7 @@ const EXTRACTION_PROMPT = `Analyze the following thought/note and extract struct
   "topics": ["2-5 short topic phrases that categorize this thought"],
   "thought_type": "one of: decision, insight, meeting_note, idea, task, observation, reference, personal_note",
   "action_items": ["any follow-up actions or todos mentioned"],
-  "context": "classify as 'work' or 'personal'. Default to 'work' if ambiguous."
+  "context": "one of: personal, family, health, finance, social, creative, travel"
 }
 
 Rules:
@@ -45,14 +48,22 @@ Rules:
 - topics: 2-5 short descriptive phrases. Always provide at least one.
 - thought_type: Choose the single best fit from the allowed types.
 - action_items: Extract explicit or implied todos/follow-ups. Empty array if none.
-- context: 'work' for professional/business content, 'personal' for private life. Default 'work' if unclear. Anything involving technology, software, engineering, APIs, infrastructure, coding, architecture, startups, or product development is 'work' UNLESS the author explicitly says it's a personal project.
+- context: Classify into a life domain:
+  - 'personal' - general personal thoughts, reflections, self-improvement, daily life
+  - 'family' - family members, parenting, relationships with relatives
+  - 'health' - physical health, mental health, fitness, diet, medical
+  - 'finance' - money, budgeting, investments, purchases, financial planning
+  - 'social' - friends, social events, community, networking
+  - 'creative' - hobbies, art, music, writing, side projects, creative pursuits
+  - 'travel' - trips, destinations, travel planning, experiences abroad
+  Default to 'personal' if the domain is unclear.
 
 Thought to analyze:
 `;
 
 export async function extractMetadata(
   rawText: string,
-  explicitContext?: ThoughtContext
+  explicitContext?: LifeDomain
 ): Promise<ExtractedMetadata> {
   const modelId = process.env.BEDROCK_MODEL_ID || 'us.anthropic.claude-sonnet-4-6';
 
@@ -112,7 +123,7 @@ export async function extractMetadata(
       : 'observation';
 
   const extractedContext =
-    typeof parsed.context === 'string' && isValidContext(parsed.context)
+    typeof parsed.context === 'string' && isValidDomain(parsed.context)
       ? parsed.context
       : 'unclassified';
 

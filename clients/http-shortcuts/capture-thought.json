@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "name": "Open Brain Shortcuts",
+  "shortcuts": [
+    {
+      "name": "Capture Thought",
+      "description": "Capture a thought to Open Brain with voice dictation",
+      "method": "POST",
+      "url": "https://YOUR_TAILSCALE_HOSTNAME:3001/api/capture",
+      "headers": [
+        {
+          "key": "Authorization",
+          "value": "Bearer YOUR_API_TOKEN"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "bodyType": "custom_text",
+      "bodyContent": "{\"text\": \"{text}\", \"context\": \"personal\"}",
+      "variables": [
+        {
+          "key": "text",
+          "type": "text_input",
+          "title": "What are you thinking?",
+          "multiline": true
+        }
+      ],
+      "responseHandling": {
+        "successMessage": "Thought captured!",
+        "showResponse": true
+      },
+      "icon": "brain",
+      "color": "#6366f1"
+    },
+    {
+      "name": "Capture Family Thought",
+      "description": "Capture a family-related thought",
+      "method": "POST",
+      "url": "https://YOUR_TAILSCALE_HOSTNAME:3001/api/capture",
+      "headers": [
+        {
+          "key": "Authorization",
+          "value": "Bearer YOUR_API_TOKEN"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "bodyType": "custom_text",
+      "bodyContent": "{\"text\": \"{text}\", \"context\": \"family\"}",
+      "variables": [
+        {
+          "key": "text",
+          "type": "text_input",
+          "title": "Family thought:",
+          "multiline": true
+        }
+      ],
+      "responseHandling": {
+        "successMessage": "Family thought captured!",
+        "showResponse": true
+      },
+      "icon": "people",
+      "color": "#22c55e"
+    },
+    {
+      "name": "Capture Health Note",
+      "description": "Capture a health-related thought",
+      "method": "POST",
+      "url": "https://YOUR_TAILSCALE_HOSTNAME:3001/api/capture",
+      "headers": [
+        {
+          "key": "Authorization",
+          "value": "Bearer YOUR_API_TOKEN"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "bodyType": "custom_text",
+      "bodyContent": "{\"text\": \"{text}\", \"context\": \"health\"}",
+      "variables": [
+        {
+          "key": "text",
+          "type": "text_input",
+          "title": "Health note:",
+          "multiline": true
+        }
+      ],
+      "responseHandling": {
+        "successMessage": "Health note captured!",
+        "showResponse": true
+      },
+      "icon": "heart",
+      "color": "#ef4444"
+    }
+  ]
+}

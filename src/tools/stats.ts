@@ -9,14 +9,21 @@ export async function getThoughtStats(): Promise<CallToolResult> {
       `=== Open Brain Stats ===`,
       ``,
       `Total thoughts: ${stats.total_thoughts}`,
+      `Active: ${stats.active_thoughts} | Archived: ${stats.archived_thoughts}`,
       ``,
-      `By context:`,
-      `  Work: ${stats.by_context.work}`,
-      `  Personal: ${stats.by_context.personal}`,
-      `  Unclassified: ${stats.by_context.unclassified}`,
-      ``,
-      `By type:`,
+      `By domain:`,
     ];
+
+    const contextEntries = Object.entries(stats.by_context);
+    if (contextEntries.length > 0) {
+      for (const [domain, count] of contextEntries) {
+        lines.push(`  ${domain}: ${count}`);
+      }
+    } else {
+      lines.push(`  (none yet)`);
+    }
+
+    lines.push('', `By type:`);
 
     const typeEntries = Object.entries(stats.by_type);
     if (typeEntries.length > 0) {
@@ -50,6 +57,7 @@ export async function getThoughtStats(): Promise<CallToolResult> {
       `Activity:`,
       `  Last 7 days: ${stats.thoughts_last_7_days}`,
       `  Last 30 days: ${stats.thoughts_last_30_days}`,
+      `  Avg confidence: ${stats.avg_confidence}`,
     );
 
     return { content: [{ type: 'text', text: lines.join('\n') }] };

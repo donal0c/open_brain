@@ -4,9 +4,9 @@ import { listRecent } from '../db/queries.js';
 
 export const listRecentSchema = z.object({
   context: z
-    .enum(['work', 'personal'])
+    .enum(['personal', 'family', 'health', 'finance', 'social', 'creative', 'travel'])
     .optional()
-    .describe('Optional: filter by context'),
+    .describe('Optional: filter by life domain'),
   limit: z
     .number()
     .int()

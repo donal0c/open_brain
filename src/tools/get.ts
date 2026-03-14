@@ -23,8 +23,10 @@ export async function getThought(input: GetThoughtInput): Promise<CallToolResult
 
     const lines = [
       `ID: ${thought.id}`,
-      `Context: ${thought.context}`,
+      `Domain: ${thought.context}`,
       `Type: ${thought.thought_type ?? 'none'}`,
+      `Confidence: ${thought.confidence}`,
+      `Active: ${thought.active}${thought.archived_reason ? ` (archived: ${thought.archived_reason})` : ''}`,
       `Created: ${new Date(thought.created_at).toISOString()}`,
       `Updated: ${new Date(thought.updated_at).toISOString()}`,
       `Topics: ${thought.topics.length > 0 ? thought.topics.join(', ') : 'none'}`,

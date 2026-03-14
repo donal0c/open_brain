@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/pwa/manifest.json">
+  <title>Open Brain</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a2e;
+      --primary: #6366f1;
+      --primary-glow: rgba(99, 102, 241, 0.3);
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --success: #22c55e;
+      --error: #ef4444;
+      --recording: #ef4444;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+    header {
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    header h1 { font-size: 18px; font-weight: 600; }
+    .status {
+      font-size: 12px;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+    .status-dot.offline { background: var(--error); }
+    .status-dot.queued { background: #f59e0b; }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      gap: 24px;
+    }
+
+    #transcript {
+      width: 100%;
+      max-width: 500px;
+      min-height: 80px;
+      padding: 16px;
+      background: var(--surface);
+      border-radius: 12px;
+      font-size: 16px;
+      line-height: 1.5;
+      color: var(--text);
+      text-align: center;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    #transcript.empty { color: var(--text-dim); font-style: italic; }
+
+    .record-btn {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      border: 4px solid var(--primary);
+      background: transparent;
+      color: var(--text);
+      font-size: 40px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .record-btn:active { transform: scale(0.95); }
+    .record-btn.recording {
+      border-color: var(--recording);
+      background: rgba(239, 68, 68, 0.15);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      50% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+    }
+
+    .domain-select {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 500px;
+    }
+    .domain-btn {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .domain-btn.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    .send-btn {
+      padding: 14px 40px;
+      border-radius: 12px;
+      border: none;
+      background: var(--primary);
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      opacity: 0.4;
+      pointer-events: none;
+    }
+    .send-btn.ready {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .send-btn:active { transform: scale(0.97); }
+    .send-btn.sending {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+
+    #feedback {
+      width: 100%;
+      max-width: 500px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.4;
+      display: none;
+    }
+    #feedback.success {
+      display: block;
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: var(--success);
+    }
+    #feedback.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: var(--error);
+    }
+
+    .queue-count {
+      font-size: 12px;
+      color: #f59e0b;
+      display: none;
+    }
+    .queue-count.visible { display: block; }
+
+    .text-input {
+      width: 100%;
+      max-width: 500px;
+      min-height: 100px;
+      padding: 16px;
+      background: var(--surface);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 16px;
+      line-height: 1.5;
+      resize: vertical;
+      font-family: inherit;
+    }
+    .text-input:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Open Brain</h1>
+    <div class="status">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">Connected</span>
+    </div>
+  </header>
+
+  <main>
+    <div id="transcript" class="empty">Tap the mic to start speaking</div>
+
+    <textarea class="text-input" id="textInput" placeholder="Or type your thought here..." style="display:none"></textarea>
+
+    <button class="record-btn" id="recordBtn" title="Record">🎤</button>
+
+    <div class="domain-select" id="domainSelect">
+      <button class="domain-btn active" data-domain="personal">Personal</button>
+      <button class="domain-btn" data-domain="family">Family</button>
+      <button class="domain-btn" data-domain="health">Health</button>
+      <button class="domain-btn" data-domain="finance">Finance</button>
+      <button class="domain-btn" data-domain="social">Social</button>
+      <button class="domain-btn" data-domain="creative">Creative</button>
+      <button class="domain-btn" data-domain="travel">Travel</button>
+    </div>
+
+    <button class="send-btn" id="sendBtn">Send Thought</button>
+
+    <div id="feedback"></div>
+    <div class="queue-count" id="queueCount"></div>
+  </main>
+
+  <script>
+    // Config — set via URL params: ?token=xxx&server=https://...
+    const params = new URLSearchParams(location.search);
+    const API_TOKEN = params.get('token') || localStorage.getItem('ob-token') || '';
+    const SERVER = params.get('server') || localStorage.getItem('ob-server') || location.origin;
+
+    if (params.get('token')) localStorage.setItem('ob-token', params.get('token'));
+    if (params.get('server')) localStorage.setItem('ob-server', params.get('server'));
+
+    // State
+    let isRecording = false;
+    let currentText = '';
+    let selectedDomain = 'personal';
+    let recognition = null;
+
+    // DOM
+    const recordBtn = document.getElementById('recordBtn');
+    const transcript = document.getElementById('transcript');
+    const textInput = document.getElementById('textInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const feedback = document.getElementById('feedback');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const queueCount = document.getElementById('queueCount');
+
+    // Web Speech API
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event) => {
+        let interim = '';
+        let final = '';
+        for (let i = 0; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            final += event.results[i][0].transcript;
+          } else {
+            interim += event.results[i][0].transcript;
+          }
+        }
+        currentText = final;
+        transcript.textContent = final + (interim ? '...' + interim : '');
+        transcript.classList.remove('empty');
+        updateSendBtn();
+      };
+
+      recognition.onend = () => {
+        if (isRecording) {
+          // Auto-restart if still recording (browser sometimes stops after silence)
+          try { recognition.start(); } catch {}
+        }
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+          showFeedback('Microphone access denied. Please allow mic access.', 'error');
+        }
+      };
+    } else {
+      // No speech recognition — show text input instead
+      textInput.style.display = 'block';
+      transcript.style.display = 'none';
+      recordBtn.style.display = 'none';
+      textInput.addEventListener('input', () => {
+        currentText = textInput.value;
+        updateSendBtn();
+      });
+    }
+
+    // Record button
+    recordBtn.addEventListener('click', () => {
+      if (!recognition) return;
+
+      if (isRecording) {
+        isRecording = false;
+        recognition.stop();
+        recordBtn.classList.remove('recording');
+        recordBtn.textContent = '🎤';
+      } else {
+        isRecording = true;
+        currentText = '';
+        transcript.textContent = 'Listening...';
+        transcript.classList.remove('empty');
+        recognition.start();
+        recordBtn.classList.add('recording');
+        recordBtn.textContent = '⏹';
+        if (navigator.vibrate) navigator.vibrate(50);
+        hideFeedback();
+      }
+    });
+
+    // Domain selector
+    document.getElementById('domainSelect').addEventListener('click', (e) => {
+      const btn = e.target.closest('.domain-btn');
+      if (!btn) return;
+      document.querySelectorAll('.domain-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedDomain = btn.dataset.domain;
+    });
+
+    // Send button
+    sendBtn.addEventListener('click', async () => {
+      const text = currentText.trim();
+      if (!text) return;
+
+      sendBtn.classList.add('sending');
+      sendBtn.textContent = 'Sending...';
+
+      const idempotencyKey = crypto.randomUUID();
+
+      try {
+        const response = await fetch(`${SERVER}/api/capture`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${API_TOKEN}`,
+            'X-Idempotency-Key': idempotencyKey,
+          },
+          body: JSON.stringify({ text, context: selectedDomain }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ error: 'Request failed' }));
+          throw new Error(err.error || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const parts = [`Captured! (${data.context})`];
+        if (data.topics?.length) parts.push(`Topics: ${data.topics.join(', ')}`);
+        if (data.people?.length) parts.push(`People: ${data.people.join(', ')}`);
+        showFeedback(parts.join('\n'), 'success');
+        resetInput();
+      } catch (error) {
+        // Queue for offline replay
+        await queueOffline({ text, context: selectedDomain, idempotencyKey });
+        showFeedback(`Queued offline. Will sync when connected.`, 'error');
+        resetInput();
+        updateQueueCount();
+      }
+
+      sendBtn.classList.remove('sending');
+      sendBtn.textContent = 'Send Thought';
+    });
+
+    function updateSendBtn() {
+      sendBtn.classList.toggle('ready', currentText.trim().length > 0);
+    }
+
+    function resetInput() {
+      currentText = '';
+      if (recognition) {
+        transcript.textContent = 'Tap the mic to start speaking';
+        transcript.classList.add('empty');
+      } else {
+        textInput.value = '';
+      }
+      updateSendBtn();
+    }
+
+    function showFeedback(text, type) {
+      feedback.textContent = text;
+      feedback.className = type;
+      if (navigator.vibrate) navigator.vibrate(type === 'success' ? [50, 50, 50] : [200]);
+    }
+
+    function hideFeedback() {
+      feedback.className = '';
+      feedback.style.display = 'none';
+    }
+
+    // IndexedDB for offline queue
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open('open-brain-pwa', 1);
+        req.onupgradeneeded = () => req.result.createObjectStore('queue', { keyPath: 'id' });
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function queueOffline({ text, context, idempotencyKey }) {
+      const db = await openDB();
+      const tx = db.transaction('queue', 'readwrite');
+      tx.objectStore('queue').put({
+        id: idempotencyKey,
+        url: `${SERVER}/api/capture`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${API_TOKEN}`,
+          'X-Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({ text, context }),
+        createdAt: new Date().toISOString(),
+      });
+
+      // Request background sync if available
+      if ('serviceWorker' in navigator && 'SyncManager' in window) {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.sync.register('replay-thoughts');
+      }
+    }
+
+    async function getQueueSize() {
+      try {
+        const db = await openDB();
+        const tx = db.transaction('queue', 'readonly');
+        return new Promise((resolve) => {
+          const req = tx.objectStore('queue').count();
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => resolve(0);
+        });
+      } catch { return 0; }
+    }
+
+    async function updateQueueCount() {
+      const count = await getQueueSize();
+      if (count > 0) {
+        queueCount.textContent = `${count} thought(s) queued offline`;
+        queueCount.classList.add('visible');
+        statusDot.classList.add('queued');
+      } else {
+        queueCount.classList.remove('visible');
+        statusDot.classList.remove('queued');
+      }
+    }
+
+    // Online/offline status
+    function updateOnlineStatus() {
+      if (navigator.onLine) {
+        statusDot.classList.remove('offline');
+        statusText.textContent = 'Connected';
+      } else {
+        statusDot.classList.add('offline');
+        statusText.textContent = 'Offline';
+      }
+    }
+
+    window.addEventListener('online', () => { updateOnlineStatus(); updateQueueCount(); });
+    window.addEventListener('offline', updateOnlineStatus);
+
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/pwa/sw.js').catch(() => {});
+    }
+
+    // Init
+    updateOnlineStatus();
+    updateQueueCount();
+
+    // Show setup prompt if no token
+    if (!API_TOKEN) {
+      showFeedback('Set your API token: add ?token=YOUR_TOKEN to the URL', 'error');
+    }
+  </script>
+</body>
+</html>

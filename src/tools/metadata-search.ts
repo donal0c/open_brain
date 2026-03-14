@@ -19,9 +19,9 @@ export const metadataSearchSchema = z.object({
     .optional()
     .describe('Filter by thought type'),
   context: z
-    .enum(['work', 'personal'])
+    .enum(['personal', 'family', 'health', 'finance', 'social', 'creative', 'travel'])
     .optional()
-    .describe('Filter by context'),
+    .describe('Filter by life domain'),
   date_from: z
     .string()
     .optional()
